@@ -1,17 +1,30 @@
 import httpx
 from typing import Optional
-import json
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
 
 from app.config import settings
-from app.models.product import Product, ProductSnapshot, ProductStatus, SKU, Characteristic
-from app.database import SessionLocal
+from app.models.product import ProductSnapshot
 
+async def get_http_client() -> httpx.AsyncClient:
+    async with httpx.AsyncClient(
+        timeout=settings.B2B_TIMEOUT
+    ) as client:
+        yield client
+
+def get_product_service(
+        client: httpx.AsyncClient = Depends(get_http_client)
+) -> ProductService:
+    return ProductService(client)
 
 class ProductService:
-    def __init__(self):
+    def __init__(self, client: httpx.AsyncClient):
         self.b2b_base_url = settings.B2B_API_BASE_URL
         self.timeout = settings.B2B_TIMEOUT
         self.b2b_token = settings.B2B_API_TOKEN
+        self.client = client
 
     def _get_headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
@@ -19,93 +32,81 @@ class ProductService:
             headers["Authorization"] = f"Bearer {self.b2b_token}"
         return headers
 
-    async def get_product_from_b2b(self, product_id: int) -> Optional[dict]:
+    async def get_product_from_b2b(self, product_id: int) -> dict:
         """Запрашивает данные товара из B2B"""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                # B2B требует авторизацию, поэтому передаём заголовок
-                response = await client.get(
-                    f"{self.b2b_base_url}/products/{product_id}"
-                    f"{self.b2b_base_url}/products/{product_id}",
-                    headers=self._get_headers()
-                )
-                if response.status_code == 200:
-                    return response.json()
-                return None
-            except httpx.RequestError:
-                return None
 
-    def create_product_snapshot(
+        response = await self.client.get(
+            f"{self.b2b_base_url}/product/{product_id}",
+            headers = self._get_headers()
+        )
+
+        response = raise_for_status()
+        return response.json()
+
+    async def create_product_snapshot(
         self,
+        session: AsyncSession,
         product_id: int,
         snapshot_type: str,
         data: dict
     ) -> ProductSnapshot:
-        """Создаёт снимок товара"""
-        db = SessionLocal()
-        try:
-            snapshot = ProductSnapshot(
-                product_id=product_id,
-                snapshot_type=snapshot_type,
-                data=json.dumps(data)
-            )
-            db.add(snapshot)
-            db.commit()
-            db.refresh(snapshot)
-            return snapshot
-        finally:
-            db.close()
+        """Создаёт снимок товара (асинхронно)"""
 
-    def get_product_by_external_id(self, external_id: int) -> Optional[Product]:
-        """Получает товар по внешнему ID"""
-        db = SessionLocal()
-        try:
-            return db.query(Product).filter(
-                Product.external_id == external_id
-            ).first()
-        finally:
-            db.close()
+        snapshot = ProductSnapshot(
+            product_id=product_id,
+            snapshot_type=snapshot_type,
+            data=data
+        )
 
-    def update_product_status(
-        self,
-        product_id: int,
-        status: ProductStatus
-    ) -> Optional[Product]:
-        """Обновляет статус товара"""
-        db = SessionLocal()
-        try:
-            product = db.query(Product).filter(
-                Product.id == product_id
-            ).first()
-            if product:
-                product.status = status
-                db.commit()
-                db.refresh(product)
-            return product
-        finally:
-            db.close()
+        session.add(snapshot)
+        await session.flush()
 
-    async def notify_b2b_product_approved(self, product_id: int) -> bool:
+        return snapshot
+    
+    async def get_latest_snapshot(
+            self,
+            session: AsyncSession,
+            product_id: int,
+    ) -> Optional[ProductSnapshot]:
+        """Получить последний snapshot товара"""
+
+        result = await session.execute(
+            select(ProductSnapshot)
+            .where(ProductSnapshot.product_id == product_id)
+            .order_by(ProductSnapshot.created_at.desc())
+            .limit(1)
+        )
+
+        return result.scalar_one_or_none()
+
+    async def notify_b2b_product_approved(self, product_id: int) -> None:
         """Отправляет в B2B событие об одобрении товара"""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                # B2B ожидает событие в формате: {"product_id": int, "event": "PRODUCT_APPROVED"}
-                response = await client.post(
-                    f"{self.b2b_base_url}/events/product-approved",
-                    json={"product_id": product_id, "event": "PRODUCT_APPROVED"}
-                )
-                return response.status_code == 200
-            except httpx.RequestError:
-                return False
 
-    async def notify_b2b_product_blocked(self, product_id: int, reason: str) -> bool:
+        response = await self.client.post(
+            f"{self.b2b_base_url}/event/product-approved",
+            headers=self._get_headers(),
+            json = {
+                "product_id": product_id,
+                "event": "PRODUCT_APPROVED"
+            },
+        )
+
+        response.raise_for_status()
+
+    async def notify_b2b_product_blocked(
+            self,
+            product_id: int,
+            reason: str) -> None:
         """Отправляет в B2B событие о блокировке товара"""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                response = await client.post(
-                    f"{self.b2b_base_url}/events/product-blocked",
-                    json={"product_id": product_id, "event": "PRODUCT_BLOCKED", "reason": reason}
-                )
-                return response.status_code == 200
-            except httpx.RequestError:
-                return False
+        
+        response = await self.client.post(
+            f"{self.b2b_base_url}/event/product-blocked",
+            headers=self._get_headers(),
+            json={
+                "product_id":product_id,
+                "event":"PRODUCT_BLOCKED",
+                reason: reason
+            },
+        )
+
+        response.raise_for_status()
