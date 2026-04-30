@@ -1,131 +1,135 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
-from app.models.product import (
-    Product, ProductSnapshot, ProductStatus,
-    ModerationQueueItem, BlockingReason
-)
-from app.database import SessionLocal
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+
+from app.models.product import ProductSnapshot, ModerationQueueItem
 from app.services.product_service import ProductService
 
+def get_moderation_service(
+        product_service: ProductService = Depends()
+) -> ModerationService:
+    return ModerationService(product_service)
 
 class ModerationService:
-    def __init__(self):
-        self.product_service = ProductService()
+    def __init__(self, product_service: ProductService):
+        self.product_service = product_service
 
-    def get_next_from_queue(self) -> Optional[ModerationQueueItem]:
-        """Получает следующую карточку из очереди"""
-        db = SessionLocal()
-        try:
-            item = db.query(ModerationQueueItem).filter(
-                ModerationQueueItem.assigned_at.is_(None)
-            ).order_by(ModerationQueueItem.id).first()
+    async def get_next_from_queue(self, session: AsyncSession) -> Optional[ModerationQueueItem]:
+        """Получает следующую карточку из очереди (асинхронно)"""
+        result = await session.execute(
+            select(ModerationQueueItem)
+            .where(ModerationQueueItem.status == "pending",
+                   ModerationQueueItem.assigned_at.is_(None))
+            .order_by(ModerationQueueItem.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
 
-            if item:
-                item.assigned_at = datetime.utcnow()
-                db.commit()
-                db.refresh(item)
-            return item
-        finally:
-            db.close()
+        item = result.scalar_one_or_none()
 
-    async def approve_product(self, product_id: int) -> Optional[Product]:
-        """Одобрить товар и отправить уведомление в B2B"""
-        db = SessionLocal()
-        try:
-            product = db.query(Product).filter(
-                Product.id == product_id
-            ).first()
+        if item:
+            item.assigned_at = datetime.now(timezone.utc)
+            await session.flush()
 
-            if not product:
-                return None
+        return item
 
-            product.status = ProductStatus.MODERATED
-            db.commit()
-            db.refresh(product)
+    async def approve_product(
+        self,
+        session: AsyncSession,
+        product_id: int
+    ) -> Optional[ModerationQueueItem]:
+        """Одобрить товар и удалить из очереди"""
+        result = await session.execute(
+            select(ModerationQueueItem)
+            .where(ModerationQueueItem.product_id == product_id,
+                   ModerationQueueItem.status == "pending",
+            )
+        )
+        item = result.scalar_one_or_none()
 
-            queue_item = db.query(ModerationQueueItem).filter(
-                ModerationQueueItem.product_id == product_id
-            ).first()
-            if queue_item:
-                db.delete(queue_item)
-                db.commit()
+        if not item:
+            return None
 
-            # Отправляем уведомление в B2B (фоновая задача)
-            await self.product_service.notify_b2b_product_approved(product.external_id)
+        item.status = "approved"
+        item.moderated_at = datetime.now(timezone.utc)
 
-            return product
-        finally:
-            db.close()
+        await session.flush()
+
+        await self.product_service.notify_b2b_product_approved(item.product_id)
+
+        return item
 
     async def decline_product(
         self,
+        session: AsyncSession,
         product_id: int,
         reason_code: str,
         comment: Optional[str] = None
-    ) -> Optional[Product]:
-        """Заблокировать товар с причиной и отправить уведомление в B2B"""
-        db = SessionLocal()
-        try:
-            product = db.query(Product).filter(
-                Product.id == product_id
-            ).first()
-
-            if not product:
-                return None
-
-            product.status = ProductStatus.BLOCKED
-            db.commit()
-            db.refresh(product)
-
-            queue_item = db.query(ModerationQueueItem).filter(
-                ModerationQueueItem.product_id == product_id
-            ).first()
-            if queue_item:
-                db.delete(queue_item)
-                db.commit()
-
-            # Отправляем уведомление в B2B (фоновая задача)
-            reason = f"{reason_code}: {comment}" if comment else reason_code
-            await self.product_service.notify_b2b_product_blocked(
-                product.external_id,
-                reason
+    ) -> Optional[ModerationQueueItem]:
+        """Заблокировать товар и удалить из очереди"""
+        result = await session.execute(
+            select(ModerationQueueItem)
+            .where(ModerationQueueItem.product_id == product_id,
+                   ModerationQueueItem.status == "pending",
             )
+        )
+        item = result.scalar_one_or_none()
 
-            return product
-        finally:
-            db.close()
+        if not item:
+            return None
 
-    def get_blocking_reasons(self) -> list[BlockingReason]:
-        """Получает список причин блокировки"""
-        db = SessionLocal()
-        try:
-            return db.query(BlockingReason).all()
-        finally:
-            db.close()
+        item.status = "declined"
+        item.moderation_reason = (
+            f"{reason_code}: {comment}" if comment else reason_code
+        )
+        item.moderated_at = datetime.now(timezone.utc)
 
-    def add_to_queue(
+        await session.flush()
+
+        await self.product_service.notify_b2b_product_blocked(
+            item.product_id,
+            item.moderation_reason
+        )
+
+        return item
+
+    def get_blocking_reasons(self) -> list[dict]:
+        """Возвращает статический список причин блокировки"""
+        return [
+            {"id": 1, "code": "INAPPROPRIATE_CONTENT", "description": "Неприемлемый контент"},
+            {"id": 2, "code": "FORBIDDEN_ITEM", "description": "Запрещённый товар"},
+            {"id": 3, "code": "MISLEADING_INFO", "description": "Вводящая информация"},
+            {"id": 4, "code": "DUPLICATE", "description": "Дубликат товара"},
+            {"id": 5, "code": "PRICING_ERROR", "description": "Ошибка в цене"},
+        ]
+
+    async def add_to_queue(
         self,
+        session: AsyncSession,
         product_id: int,
         is_new: bool = True
     ) -> ModerationQueueItem:
         """Добавляет товар в очередь модерации"""
-        db = SessionLocal()
-        try:
-            existing = db.query(ModerationQueueItem).filter(
-                ModerationQueueItem.product_id == product_id
-            ).first()
+        existing = await session.execute(
+            select(ModerationQueueItem)
+            .where(ModerationQueueItem.product_id == product_id)
+        )
+        item = existing.scalar_one_or_none()
 
-            if existing:
-                return existing
-
-            item = ModerationQueueItem(
-                product_id=product_id,
-                is_new=1 if is_new else 0
-            )
-            db.add(item)
-            db.commit()
-            db.refresh(item)
+        if item:
             return item
-        finally:
-            db.close()
+
+        item = ModerationQueueItem(
+            product_id=product_id,
+            is_new=is_new,
+            status="pending",
+            created_at=datetime.now(timezone.utc),
+        )
+
+        session.add(item)
+        await session.flush()
+
+        return item
