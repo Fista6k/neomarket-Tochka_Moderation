@@ -26,7 +26,7 @@ app = create_app()
 @app.on_event("startup")
 async def startup_event():
     """Создаёт таблицы БД при старте"""
-    init_db()
+    await init_db()
 
 
 @app.get("/health")

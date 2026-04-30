@@ -1,6 +1,8 @@
 from app.database import engine, Base
-from app.models.product import Product, ProductSnapshot, BlockingReason, ModerationQueueItem, SKU, Characteristic
+from app.models.product import ProductSnapshot, ModerationQueueItem
 
-def init_db():
-    """Создаёт все таблицы в БД"""
-    Base.metadata.create_all(bind=engine)
+
+async def init_db():
+    """Создаёт все таблицы в БД (асинхронно)"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
