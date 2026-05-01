@@ -1,15 +1,27 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.api import queue, decisions, reference, webhooks
-from app.db_init import init_db
+from app.database import engine
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.DEBUG:
+        from app.db_init import init_db
+        await init_db()
+
+    yield
+
+    await engine.dispose()
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.PROJECT_NAME,
         version=settings.VERSION,
-        description="Модуль модерации товаров NeoMarket"
+        description="Модуль модерации товаров NeoMarket",
+        lifespan=lifespan,
     )
 
     app.include_router(queue.router)
@@ -21,13 +33,6 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Создаёт таблицы БД при старте"""
-    await init_db()
-
 
 @app.get("/health")
 async def health_check():

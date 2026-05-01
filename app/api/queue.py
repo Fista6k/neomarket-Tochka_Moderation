@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_204_NO_CONTENT
-import json
 
 from app.database import get_db
 from app.services.moderation_service import ModerationService, get_moderation_service

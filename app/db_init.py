@@ -1,5 +1,4 @@
 from app.database import engine, Base
-from app.models.product import ProductSnapshot, ModerationQueueItem
 
 
 async def init_db():
