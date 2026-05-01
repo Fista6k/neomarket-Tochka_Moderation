@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     B2B_TIMEOUT: float = 5.0
     B2B_API_TOKEN: Optional[str] = None  # Токен авторизации для B2B
 
+    DEBUG: bool = True
+
     class Config:
         env_file = ".env"
         case_sensitive = True

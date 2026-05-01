@@ -6,12 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from app.models.product import ModerationQueueItem, BlockingReason
-from app.services.product_service import ProductService
+from app.services.product_service import ProductService, get_product_service
 
-def get_moderation_service(
-        product_service: ProductService = Depends()
-) -> ModerationService:
-    return ModerationService(product_service)
 
 class ModerationService:
     def __init__(self, product_service: ProductService):
@@ -137,3 +133,7 @@ class ModerationService:
         await session.flush()
 
         return item
+
+def get_moderation_service() -> ModerationService:
+    product_service = get_product_service()
+    return ModerationService(product_service)

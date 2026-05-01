@@ -14,11 +14,6 @@ async def get_http_client() -> httpx.AsyncClient:
     ) as client:
         yield client
 
-def get_product_service(
-        client: httpx.AsyncClient = Depends(get_http_client)
-) -> ProductService:
-    return ProductService(client)
-
 class ProductService:
     def __init__(self, client: httpx.AsyncClient):
         self.b2b_base_url = settings.B2B_API_BASE_URL
@@ -110,3 +105,7 @@ class ProductService:
         )
 
         response.raise_for_status()
+
+def get_product_service() -> ProductService:
+    client = httpx.AsyncClient(timeout=settings.B2B_TIMEOUT)
+    return ProductService(client)

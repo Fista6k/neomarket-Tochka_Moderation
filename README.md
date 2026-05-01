@@ -45,6 +45,8 @@ B2B должен отправлять POST запрос на `/api/v1/webhooks/p
 
 ## Запуск
 
+### Локально (разработка)
+
 ```bash
 # Установка зависимостей
 pip install -r requirements.txt
@@ -55,13 +57,26 @@ pip install -r requirements.txt
 #    или через psql: CREATE DATABASE moderation;
 
 # 2. Настройте подключение в .env:
-#    DATABASE_URL=postgresql://user:password@host:5432/moderation
+#    DATABASE_URL=postgresql+asyncpg://user:password@host:5432/moderation
 
 # Копирование конфигурации
 cp .env.example .env
 
 # Запуск сервера
 uvicorn app.main:app --reload
+```
+
+### Через Docker
+
+```bash
+# Запуск всех сервисов (PostgreSQL + модерация)
+docker-compose up -d
+
+# Просмотр логов
+docker-compose logs -f moderation
+
+# Остановка
+docker-compose down
 ```
 
 ## Структура проекта
