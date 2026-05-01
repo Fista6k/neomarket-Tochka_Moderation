@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
-from app.models.product import ProductSnapshot, ModerationQueueItem
+from app.models.product import ModerationQueueItem, BlockingReason
 from app.services.product_service import ProductService
 
 def get_moderation_service(
@@ -96,15 +96,19 @@ class ModerationService:
 
         return item
 
-    def get_blocking_reasons(self) -> list[dict]:
+    async def get_blocking_reasons(
+            self,
+            session: AsyncSession
+    ) -> list[BlockingReason]:
         """Возвращает статический список причин блокировки"""
-        return [
-            {"id": 1, "code": "INAPPROPRIATE_CONTENT", "description": "Неприемлемый контент"},
-            {"id": 2, "code": "FORBIDDEN_ITEM", "description": "Запрещённый товар"},
-            {"id": 3, "code": "MISLEADING_INFO", "description": "Вводящая информация"},
-            {"id": 4, "code": "DUPLICATE", "description": "Дубликат товара"},
-            {"id": 5, "code": "PRICING_ERROR", "description": "Ошибка в цене"},
-        ]
+        
+        result = await session.execute(
+            select(BlockingReason)
+            .where(BlockingReason.is_active == True)
+            .order_by(BlockingReason.id)
+        )
+
+        return result.scalars().all()
 
     async def add_to_queue(
         self,

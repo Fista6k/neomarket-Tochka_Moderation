@@ -34,3 +34,10 @@ class ModerationQueueItem(Base):
 
     snapshots = relationship("ProductSnapshot", back_populates="moderation", lazy="selectin")
 
+class BlockingReason(Base):
+    __tablename__ = "blocking_reasons"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String, unique=True, nullable=False)
+    description = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
