@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from app.config import settings
-from app.api import queue, decisions, reference, webhooks
+from app.core.config import settings
 from app.database import engine
+from app.api.router import api_router
 
 
 @asynccontextmanager
@@ -24,10 +24,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.include_router(queue.router)
-    app.include_router(decisions.router)
-    app.include_router(reference.router)
-    app.include_router(webhooks.router)
+    app.include_router(api_router)
 
     return app
 
