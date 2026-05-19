@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     INITIAL_ADMIN_EMAIL: str
     INITIAL_ADMIN_PASSWORD: str
 
+    IDEMPOTENCY_TTL_HOURS: int = 24
+
     DEBUG: bool = True
 
     class Config:
