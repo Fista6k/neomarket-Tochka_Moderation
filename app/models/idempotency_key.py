@@ -1,7 +1,6 @@
 import uuid
 from uuid6 import uuid7
 from datetime import datetime, timezone
-from sqlalchemy import DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +15,8 @@ class IdempotencyKey(Base):
         primary_key=True,
     )
 
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
     expires_at: Mapped[datetime] = mapped_column()

@@ -30,10 +30,12 @@ class B2BService:
     ):
         await self.idempotencyRepo.cleanup_expired()
 
-        if await self.idempotencyRepo.create_if_not_exists(
+        created = await self.idempotencyRepo.create_if_not_exists(
             event.idempotency_key,
             datetime.now(timezone.utc) + timedelta(hours=IDEMPOTENCY_TTL_HOURS)
-        ):
+        )
+
+        if not created:
             raise HTTPException(status_code=409, detail="Duplicate event")
 
         if event.event_type == "PRODUCT_CREATED":

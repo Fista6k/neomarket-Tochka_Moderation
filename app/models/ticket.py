@@ -2,10 +2,12 @@ import uuid
 from uuid6 import uuid7
 from datetime import datetime, timezone
 from sqlalchemy import (
+    Column,
     DateTime,
     Enum,
     ForeignKey,
     Integer,
+    Table,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -14,6 +16,24 @@ from app.database import Base
 from app.models.enums import TicketKind, TicketStatus
 from app.models.field_report import FieldReport
 from app.models.ticket_history import TicketHistory
+
+
+ticket_blocking_reasons = Table(
+    "ticket_blocking_reasons",
+    Base.metadata,
+    Column(
+        "ticket_id",
+        UUID(as_uuid=True),
+        ForeignKey("tickets.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "reason_id",
+        UUID(as_uuid=True),
+        ForeignKey("blocking_reasons.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+)
 
 
 class Ticket(Base):
@@ -79,3 +99,4 @@ class Ticket(Base):
     moderator = relationship("Moderator")
     field_reports = relationship("FieldReport", back_populates="ticket")
     history = relationship("TicketHistory", back_populates="ticket")
+    blocking_reasons = relationship("BlockingReason", secondary=ticket_blocking_reasons)
