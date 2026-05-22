@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.blocking_reason import BlockingReason
-from app.models.enums import TicketStatus
+from app.models.enums import TicketAction, TicketStatus
 from app.models.field_report import FieldReport
+from app.models.moderator import Moderator
 from app.models.ticket import Ticket
 from app.models.ticket_history import TicketHistory
 
@@ -223,3 +224,105 @@ class TicketRepository:
     async def _count(self, query) -> int:
         result = await self.db.execute(select(func.count()).select_from(query.subquery()))
         return result.scalar_one()
+
+    async def stats_overview(self, period_start: datetime) -> dict:
+        status_result = await self.db.execute(
+            select(Ticket.status, func.count()).group_by(Ticket.status)
+        )
+        status_counts = {
+            status.value if hasattr(status, "value") else status: count
+            for status, count in status_result.all()
+        }
+
+        decision_result = await self.db.execute(
+            select(Ticket.status, func.count())
+            .where(
+                Ticket.status.in_(
+                    [
+                        TicketStatus.APPROVED,
+                        TicketStatus.BLOCKED,
+                        TicketStatus.HARD_BLOCKED,
+                    ]
+                ),
+                Ticket.decision_at >= period_start,
+            )
+            .group_by(Ticket.status)
+        )
+        decision_counts = {
+            status.value if hasattr(status, "value") else status: count
+            for status, count in decision_result.all()
+        }
+
+        priority_result = await self.db.execute(
+            select(Ticket.queue_priority, func.count())
+            .where(Ticket.status == TicketStatus.PENDING)
+            .group_by(Ticket.queue_priority)
+        )
+        pending_by_priority = {str(priority): count for priority, count in priority_result.all()}
+
+        avg_result = await self.db.execute(
+            select(
+                func.avg(
+                    func.extract("epoch", Ticket.decision_at - Ticket.claimed_at)
+                )
+            ).where(
+                Ticket.decision_at >= period_start,
+                Ticket.claimed_at.is_not(None),
+                Ticket.decision_at.is_not(None),
+            )
+        )
+        avg_review_time = avg_result.scalar_one_or_none()
+
+        return {
+            "pending_count": status_counts.get(TicketStatus.PENDING.value, 0),
+            "in_review_count": status_counts.get(TicketStatus.IN_REVIEW.value, 0),
+            "approved_count": decision_counts.get(TicketStatus.APPROVED.value, 0),
+            "blocked_count": decision_counts.get(TicketStatus.BLOCKED.value, 0),
+            "hard_blocked_count": decision_counts.get(TicketStatus.HARD_BLOCKED.value, 0),
+            "avg_review_time_seconds": int(avg_review_time) if avg_review_time else None,
+            "pending_by_priority": {
+                str(priority): pending_by_priority.get(str(priority), 0)
+                for priority in range(1, 5)
+            },
+        }
+
+    async def moderator_stats(self, period_start: datetime) -> list[dict]:
+        decisions = [TicketAction.APPROVED, TicketAction.BLOCKED, TicketAction.HARD_BLOCKED]
+        result = await self.db.execute(
+            select(
+                Moderator.id.label("moderator_id"),
+                func.concat(
+                    Moderator.first_name,
+                    case((Moderator.last_name.is_not(None), " "), else_=""),
+                    func.coalesce(Moderator.last_name, ""),
+                ).label("moderator_name"),
+                func.count(TicketHistory.id).filter(TicketHistory.action.in_(decisions)).label("decisions_count"),
+                func.count(TicketHistory.id).filter(TicketHistory.action == TicketAction.APPROVED).label("approved_count"),
+                func.count(TicketHistory.id).filter(TicketHistory.action == TicketAction.BLOCKED).label("blocked_count"),
+                func.count(TicketHistory.id).filter(TicketHistory.action == TicketAction.HARD_BLOCKED).label("hard_blocked_count"),
+                func.count(TicketHistory.id).filter(TicketHistory.action == TicketAction.RELEASED).label("released_count"),
+                func.avg(
+                    func.extract("epoch", Ticket.decision_at - Ticket.claimed_at)
+                )
+                .filter(
+                    TicketHistory.action.in_(decisions),
+                    Ticket.claimed_at.is_not(None),
+                    Ticket.decision_at.is_not(None),
+                )
+                .label("avg_review_time_seconds"),
+            )
+            .select_from(Moderator)
+            .join(TicketHistory, TicketHistory.moderator_id == Moderator.id)
+            .outerjoin(Ticket, Ticket.id == TicketHistory.ticket_id)
+            .where(TicketHistory.at >= period_start)
+            .group_by(Moderator.id, Moderator.first_name, Moderator.last_name)
+            .order_by(func.count(TicketHistory.id).filter(TicketHistory.action.in_(decisions)).desc())
+        )
+
+        stats = []
+        for row in result.mappings().all():
+            item = dict(row)
+            avg_review_time = item["avg_review_time_seconds"]
+            item["avg_review_time_seconds"] = int(avg_review_time) if avg_review_time else None
+            stats.append(item)
+        return stats

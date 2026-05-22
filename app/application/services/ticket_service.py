@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
+from app.application.services.b2b_moderation_event_client import B2BModerationEventClient
 from app.infrastructure.repositories.ticket_repository import TicketRepository
 from app.models.enums import TicketAction, TicketStatus, UserRole
 from app.models.field_report import FieldReport
@@ -14,8 +15,13 @@ from app.models.ticket_history import TicketHistory
 
 class TicketService:
 
-    def __init__(self, repo: TicketRepository):
+    def __init__(
+        self,
+        repo: TicketRepository,
+        b2b_events: B2BModerationEventClient | None = None,
+    ):
         self.repo = repo
+        self.b2b_events = b2b_events or B2BModerationEventClient()
 
     async def list(self, **filters):
         await self.repo.auto_return_expired()
@@ -100,6 +106,13 @@ class TicketService:
                 at=datetime.now(timezone.utc),
             ),
         )
+        await self.b2b_events.send_moderated(
+            idempotency_key=ticket.id,
+            product_id=ticket.product_id,
+            moderator_id=moderator.id,
+            moderator_comment=comment,
+            occurred_at=ticket.decision_at,
+        )
         await self.repo.db.commit()
         return await self.repo.get_by_id(ticket.id)
 
@@ -148,6 +161,16 @@ class TicketService:
                 comment=comment,
                 at=datetime.now(timezone.utc),
             ),
+        )
+        await self.b2b_events.send_blocked(
+            idempotency_key=ticket.id,
+            product_id=ticket.product_id,
+            moderator_id=moderator.id,
+            moderator_comment=comment,
+            blocking_reason_id=reasons[0].id,
+            hard_block=hard,
+            field_reports=field_reports,
+            occurred_at=ticket.decision_at,
         )
         await self.repo.db.commit()
         return await self.repo.get_by_id(ticket.id)
