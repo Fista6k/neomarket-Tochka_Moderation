@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
+from app.core.error_handlers import register_error_handlers
 from app.database import engine
 from app.api.router import api_router
 
@@ -24,6 +25,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    register_error_handlers(app)
     app.include_router(api_router, prefix=settings.API_V1_STR)
 
     return app
