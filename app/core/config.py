@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     DEBUG: bool = True
 
+    MODERATION_PORT: int = 8000
+
     class Config:
         env_file = ".env"
         case_sensitive = True

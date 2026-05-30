@@ -1,6 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete
-from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import insert
 
@@ -12,7 +11,7 @@ class IdempotencyRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_if_not_exists(self, key: UUID, expires_at: datetime) -> bool:
+    async def create_if_not_exists(self, key: str, expires_at: datetime) -> bool:
         expires_at = self._as_naive_utc(expires_at)
         stmt = insert(IdempotencyKey).values(key=key, expires_at=expires_at)
         stmt = stmt.on_conflict_do_nothing(index_elements=['key'])

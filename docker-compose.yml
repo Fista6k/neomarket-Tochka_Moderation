@@ -5,17 +5,17 @@ services:
     build: .
     container_name: neomarket-moderation
     ports:
-      - "8000:8000"
+      - "${MODERATION_PORT:-8000}:8000"
     depends_on:
-      db:
+      moderation_db:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - neomarket-network
+      - shared-network
     env_file:
       - .env
 
-  db:
+  moderation_db:
     image: postgres:16-alpine
     container_name: moderation-db
     environment:
@@ -23,9 +23,9 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: moderation
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - moderation_postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d moderation"]
       interval: 5s
@@ -33,11 +33,11 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - neomarket-network
+      - shared-network
 
 volumes:
-  postgres_data:
+  moderation_postgres_data:
 
 networks:
-  neomarket-network:
-    driver: bridge
+  shared-network:
+    external: true

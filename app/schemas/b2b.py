@@ -1,9 +1,7 @@
-# app/schemas/b2b.py
-
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class EventProductCreated(BaseModel):
@@ -28,10 +26,22 @@ class EventProductDeleted(BaseModel):
 
 class IncomingB2BEvent(BaseModel):
     event_type: str
-    idempotency_key: UUID
+    idempotency_key: str
     occurred_at: datetime
     payload: Union[
         EventProductCreated,
         EventProductEdited,
         EventProductDeleted,
     ]
+
+    @field_validator('payload', mode='before')
+    @classmethod
+    def decode_payload(cls, v, info):
+        event_type = info.data.get('event_type')
+        if event_type == 'PRODUCT_CREATED':
+            return EventProductCreated(**v)
+        if event_type == 'PRODUCT_EDITED':
+            return EventProductEdited(**v)
+        if event_type == 'PRODUCT_DELETED':
+            return EventProductDeleted(**v)
+        raise ValueError(f'Unknown event_type: {event_type}')

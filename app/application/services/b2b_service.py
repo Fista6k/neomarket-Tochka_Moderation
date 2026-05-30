@@ -37,15 +37,17 @@ class B2BService:
 
         if not created:
             raise HTTPException(status_code=409, detail="Duplicate event")
+        
+        payload = event.payload
 
-        if event.event_type == "PRODUCT_CREATED":
-            await self._handle_created(event.payload)
+        if isinstance(payload, EventProductCreated):
+            await self._handle_created(payload)
 
-        elif event.event_type == "PRODUCT_EDITED":
-            await self._handle_edited(event.payload)
+        elif isinstance(payload, EventProductEdited):
+            await self._handle_edited(payload)
 
-        elif event.event_type == "PRODUCT_DELETED":
-            await self._handle_deleted(event.payload)
+        elif isinstance(payload, EventProductDeleted):
+            await self._handle_deleted(payload)
 
         else:
             raise HTTPException(status_code=400, detail="Unknown event type")
