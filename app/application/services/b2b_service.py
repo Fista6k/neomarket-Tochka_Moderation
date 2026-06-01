@@ -74,6 +74,10 @@ class B2BService:
         self,
         payload: EventProductEdited,
     ):
+        existing_ticket = await self.ticketRepo.get_last_by_product(payload.product_id)
+        if existing_ticket and existing_ticket.status == TicketStatus.HARD_BLOCKED:
+            return
+
         ticket = Ticket(
             product_id=payload.product_id,
             seller_id=payload.seller_id,

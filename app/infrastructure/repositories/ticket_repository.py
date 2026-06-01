@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -13,6 +16,8 @@ from app.models.field_report import FieldReport
 from app.models.moderator import Moderator
 from app.models.ticket import Ticket
 from app.models.ticket_history import TicketHistory
+
+from typing import Optional
 
 
 CLAIM_TTL_MINUTES = 30
@@ -39,10 +44,24 @@ class TicketRepository:
                 status=TicketStatus.BLOCKED,
                 assigned_moderator_id=None,
                 claimed_at=None,
+                is_deleted=True,
                 claim_expires_at=None,
                 decision_at=datetime.now(timezone.utc),
             )
         )
+
+    async def get_last_by_product(self, product_id: UUID):
+        result = await self.db.execute(
+            select(Ticket)
+            .where(Ticket.product_id == product_id)
+            .options(
+                selectinload(Ticket.field_reports),
+                selectinload(Ticket.history),
+                selectinload(Ticket.moderator),
+                selectinload(Ticket.blocking_reasons),
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def get_by_id(self, ticket_id: UUID) -> Ticket | None:
         result = await self.db.execute(
@@ -119,6 +138,7 @@ class TicketRepository:
         moderator_id: UUID,
         queue_priority: int | None = None,
         category_ids: list[UUID] | None = None,
+        b2b_client: Optional["B2BModerationEventClient"] = None
     ) -> Ticket | None:
         await self.auto_return_expired()
 
@@ -139,11 +159,23 @@ class TicketRepository:
 
         if ticket is None:
             return None
+        
+        product_updated_at = None
+        if b2b_client:
+            try:
+                product_data = await b2b_client.get_product_public(ticket.product_id)
+                product_updated_at = product_data.get("updated_at")
+                if product_updated_at:
+                    product_updated_at = datetime.fromisoformat(product_updated_at.replace("Z", "+00:00"))
+            except Exception as e:
+                logger.error(f"Failed to fetch product {ticket.product_id} from B2B: {e}")
+                return None
 
         ticket.status = TicketStatus.IN_REVIEW
         ticket.assigned_moderator_id = moderator_id
         ticket.claimed_at = now
         ticket.claim_expires_at = now + timedelta(minutes=CLAIM_TTL_MINUTES)
+        ticket.product_updated_at = product_updated_at
         await self.db.flush()
         await self.db.refresh(ticket)
         return ticket

@@ -17,6 +17,7 @@ from app.schemas.ticket import (
     TicketDetailResponse,
     TicketResponse,
 )
+from app.application.services.b2b_moderation_event_client import B2BModerationEventClient
 
 
 router = APIRouter()
@@ -24,7 +25,8 @@ router = APIRouter()
 
 async def get_ticket_service(db: AsyncSession = Depends(get_db)):
     repo = TicketRepository(db)
-    return TicketService(repo)
+    b2b_client = B2BModerationEventClient()
+    return TicketService(repo, b2b_client)
 
 @router.get("", response_model=PaginatedTickets)
 async def list_tickets(

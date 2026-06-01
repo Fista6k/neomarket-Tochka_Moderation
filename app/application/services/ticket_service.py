@@ -96,6 +96,17 @@ class TicketService:
             allow_admin=False,
         )
 
+        skus = await self.b2b_events.get_product_skus(ticket.product_id)
+
+        if not skus:
+            raise HTTPException(status_code=409, detail="Product can not be approved without SKU")
+        
+        current_product = await self.b2b_events.get_product_public(ticket.product_id)
+        current_updated_at = datetime.fromisoformat(current_product["updated_at"].replace("Z", "+00:00"))
+
+        if ticket.product_updated_at and current_updated_at > ticket.product_updated_at:
+            raise HTTPException(status_code=409, detail="Product was edited during review")
+
         ticket = await self.repo.set_approved(ticket)
         await self.repo.add_history(
             TicketHistory(
@@ -168,6 +179,7 @@ class TicketService:
             moderator_id=moderator.id,
             moderator_comment=comment,
             blocking_reason_id=reasons[0].id,
+            blocking_reason_title=reasons[0].title,
             hard_block=hard,
             field_reports=field_reports,
             occurred_at=ticket.decision_at,
@@ -186,11 +198,15 @@ class TicketService:
 
         if ticket is None:
             raise HTTPException(status_code=404, detail="Ticket not found")
+        
+        if ticket.status == TicketStatus.HARD_BLOCKED:
+            raise HTTPException(status_code=403, detail="Hard blocked ticket cannot be modified")
+
         if ticket.status != TicketStatus.IN_REVIEW:
             raise HTTPException(status_code=409, detail="Ticket is not in review")
 
         is_admin = moderator.role == UserRole.ADMIN
         if (not allow_admin or not is_admin) and ticket.assigned_moderator_id != moderator.id:
-            raise HTTPException(status_code=409, detail="Ticket belongs to another moderator")
+            raise HTTPException(status_code=403, detail="Ticket belongs to another moderator")
 
         return ticket

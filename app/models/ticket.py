@@ -11,6 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
 
 from app.database import Base
 from app.models.enums import TicketKind, TicketStatus
@@ -81,6 +82,10 @@ class Ticket(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
+    is_deleted: bool = False
+
+    product_updated_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
 
     json_before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     json_after: Mapped[dict] = mapped_column(JSONB)

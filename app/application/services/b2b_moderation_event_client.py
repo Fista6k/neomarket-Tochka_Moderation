@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import asyncio
 import json
 from datetime import datetime
@@ -16,7 +17,7 @@ from app.models.enums import FieldSeverity
 
 class B2BModerationEventClient:
     def __init__(self):
-        self.url = f"{settings.B2B_API_BASE_URL.rstrip('/')}/moderation/events"
+        self.url = settings.B2B_API_BASE_URL.rstrip('/')
         self.timeout = settings.B2B_TIMEOUT
         self.service_key = settings.B2B_SERVICE_KEY
 
@@ -51,6 +52,7 @@ class B2BModerationEventClient:
         moderator_id: UUID,
         moderator_comment: str | None,
         blocking_reason_id: UUID,
+        blocking_reason_title: str,
         hard_block: bool,
         field_reports: list[Any] | None,
         occurred_at: datetime,
@@ -62,12 +64,40 @@ class B2BModerationEventClient:
                 "event_type": "BLOCKED",
                 "moderator_id": str(moderator_id),
                 "moderator_comment": moderator_comment,
-                "blocking_reason_id": str(blocking_reason_id),
+                "blocking_reason": {
+                    "id": str(blocking_reason_id),
+                    "title": blocking_reason_title,
+                    "comment": moderator_comment,
+                },
                 "hard_block": hard_block,
                 "field_reports": self._field_reports_payload(field_reports),
                 "occurred_at": occurred_at.isoformat(),
             }
         )
+
+    async def get_product_skus(self, product_id: UUID) -> list[dict]:
+        """Возвращает список SKU товара. Если нет SKU → пустой список."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{self.url}/products/{product_id}/skus",
+                headers={"X-Service-Key": self.service_key}
+            )
+            if response.status_code == 404:
+                raise HTTPException(404, f"Product {product_id} not found in B2B")
+            response.raise_for_status()
+            return response.json()  # список SKU
+
+    async def get_product_public(self, product_id: UUID) -> dict:
+        """Возвращает публичные данные товара (включая updated_at)."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                f"{self.url}/products/{product_id}",
+                headers={"X-Service-Key": self.service_key}
+            )
+            if response.status_code == 404:
+                raise HTTPException(404, f"Product {product_id} not found in B2B")
+            response.raise_for_status()
+            return response.json()
 
     async def _post(self, payload: dict[str, Any]):
         try:
@@ -91,7 +121,7 @@ class B2BModerationEventClient:
     def _post_sync(self, payload: dict[str, Any]):
         data = json.dumps(payload).encode("utf-8")
         request = Request(
-            self.url,
+            f"{self.url}/moderation/events",
             data=data,
             method="POST",
             headers={
