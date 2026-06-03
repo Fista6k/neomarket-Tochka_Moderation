@@ -3,6 +3,7 @@ from sqlalchemy import select
 from uuid import UUID
 
 from app.models.blocking_reason import BlockingReason
+from app.models.ticket import Ticket
 
 
 class BlockingReasonRepository:
@@ -39,6 +40,12 @@ class BlockingReasonRepository:
 
         result = await self.db.execute(query.order_by(BlockingReason.code.asc()))
         return result.scalars().all()
+    
+    async def is_used(self, reason_id: UUID) -> bool:
+        """Проверяет, есть ли хотя бы один тикет, связанный с данной причиной."""
+        stmt = select(Ticket).where(Ticket.blocking_reasons.any(id=reason_id)).limit(1)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def create(
         self,

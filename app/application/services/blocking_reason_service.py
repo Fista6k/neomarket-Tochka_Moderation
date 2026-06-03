@@ -77,6 +77,12 @@ class BlockingReasonService:
 
         if not reason:
             raise HTTPException(status_code=404, detail="Blocking reason not found")
+        
+        if await self.repo.is_used(reason_id):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot deactivate blocking reason that is already used in moderation tickets"
+            )
 
         reason.is_active = False
         await self.repo.save()
