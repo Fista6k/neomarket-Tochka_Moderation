@@ -16,7 +16,6 @@ class IdempotencyRepository:
         stmt = insert(IdempotencyKey).values(key=key, expires_at=expires_at)
         stmt = stmt.on_conflict_do_nothing(index_elements=['key'])
         result = await self.db.execute(stmt)
-        await self.db.commit()
         return result.rowcount > 0
 
     async def cleanup_expired(self):
@@ -25,7 +24,6 @@ class IdempotencyRepository:
                 IdempotencyKey.expires_at < self._now_naive_utc()
             )
         )
-        await self.db.commit()
 
     @staticmethod
     def _now_naive_utc() -> datetime:

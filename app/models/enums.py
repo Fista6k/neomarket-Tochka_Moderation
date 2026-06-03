@@ -33,3 +33,10 @@ class TicketAction(str, enum.Enum):
     BLOCKED = "BLOCKED"
     HARD_BLOCKED = "HARD_BLOCKED"
     AUTO_RETURNED = "AUTO_RETURNED"
+
+class FieldPath(str, enum.Enum):
+    TITLE = "title"
+    DESCRIPTION = "description"
+    PRICE = "price"
+    IMAGES = "images"
+    CATEGORY = "category"

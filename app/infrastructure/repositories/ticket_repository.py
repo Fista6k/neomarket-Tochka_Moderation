@@ -50,6 +50,12 @@ class TicketRepository:
             )
         )
 
+    async def update(self, ticket: Ticket) -> Ticket:
+        """Сохраняет изменения в существующем тикете."""
+        await self.db.flush()
+        await self.db.refresh(ticket)
+        return ticket
+
     async def get_last_by_product(self, product_id: UUID):
         result = await self.db.execute(
             select(Ticket)
@@ -132,6 +138,20 @@ class TicketRepository:
             .offset(offset)
         )
         return result.scalars().all(), total_count
+    
+    async def get_active_in_review_by_moderator(self, moderator_id: UUID) -> Ticket | None:
+        """Возвращает активный (неистекший) IN_REVIEW тикет модератора, если есть."""
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(Ticket)
+            .where(
+                Ticket.status == TicketStatus.IN_REVIEW,
+                Ticket.assigned_moderator_id == moderator_id,
+                Ticket.claim_expires_at > now,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def claim_next(
         self,

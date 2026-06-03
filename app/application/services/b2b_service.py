@@ -36,7 +36,7 @@ class B2BService:
         )
 
         if not created:
-            raise HTTPException(status_code=409, detail="Duplicate event")
+            return
         
         payload = event.payload
 
@@ -76,6 +76,15 @@ class B2BService:
     ):
         existing_ticket = await self.ticketRepo.get_last_by_product(payload.product_id)
         if existing_ticket and existing_ticket.status == TicketStatus.HARD_BLOCKED:
+            return
+        
+        if existing_ticket and existing_ticket.status == TicketStatus.IN_REVIEW:
+            existing_ticket.seller_id = payload.seller_id
+            existing_ticket.category_id = payload.category_id
+            existing_ticket.queue_priority = payload.queue_priority
+            existing_ticket.json_before = payload.json_before
+            existing_ticket.json_after = payload.json_after
+            await self.ticketRepo.update(existing_ticket)
             return
 
         ticket = Ticket(

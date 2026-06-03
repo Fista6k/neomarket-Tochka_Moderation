@@ -11,6 +11,7 @@ from app.models.enums import TicketAction, TicketStatus, UserRole
 from app.models.field_report import FieldReport
 from app.models.moderator import Moderator
 from app.models.ticket_history import TicketHistory
+from app.models.enums import FieldPath
 
 
 class TicketService:
@@ -37,6 +38,12 @@ class TicketService:
         queue_priority: int | None = None,
         category_ids: list[UUID] | None = None,
     ):
+        active = await self.repo.get_active_in_review_by_moderator(moderator.id)
+        if active:
+            raise HTTPException(status_code=409, detail="Moderator already has an in-review ticket")
+        
+        await self.repo.auto_return_expired()
+
         ticket = await self.repo.claim_next(
             moderator_id=moderator.id,
             queue_priority=queue_priority,
@@ -153,6 +160,11 @@ class TicketService:
         ticket = await self.repo.set_blocked(ticket, hard=hard)
 
         if field_reports:
+            valid_paths = {item.value for item in FieldPath}
+            for report in field_reports:
+                if report.field_path not in valid_paths:
+                    raise HTTPException(status_code=400, detail=f"Invalid field_path: {report.field_path}. Allowed: {list(valid_paths)}")
+
             reports = [
                 FieldReport(
                     ticket_id=ticket.id,
