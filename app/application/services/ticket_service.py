@@ -191,7 +191,6 @@ class TicketService:
             moderator_id=moderator.id,
             moderator_comment=comment,
             blocking_reason_id=reasons[0].id,
-            blocking_reason_title=reasons[0].title,
             hard_block=hard,
             field_reports=field_reports,
             occurred_at=ticket.decision_at,
