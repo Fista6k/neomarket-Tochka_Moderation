@@ -48,6 +48,7 @@ class TicketService:
             moderator_id=moderator.id,
             queue_priority=queue_priority,
             category_ids=category_ids,
+            b2b_client=self.b2b_events,
         )
 
         if ticket is None:
@@ -162,15 +163,15 @@ class TicketService:
         if field_reports:
             valid_paths = {item.value for item in FieldPath}
             for report in field_reports:
-                if report.field_path not in valid_paths:
+                if report.field_name not in valid_paths:
                     raise HTTPException(status_code=400, detail=f"Invalid field_path: {report.field_path}. Allowed: {list(valid_paths)}")
 
             reports = [
                 FieldReport(
                     ticket_id=ticket.id,
-                    field_path=report.field_path,
-                    message=report.message,
-                    severity=report.severity,
+                    field_name=report.field_name,
+                    comment=report.comment,
+                    sku_id=report.sku_id,
                 )
                 for report in field_reports
             ]

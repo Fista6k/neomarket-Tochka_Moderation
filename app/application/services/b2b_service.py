@@ -57,6 +57,10 @@ class B2BService:
         self,
         payload: EventProductCreated,
     ):
+        existing = await self.ticketRepo.get_active_ticket_by_product(payload.product_id)
+        if existing:
+            raise HTTPException(status_code=409, detail="Product already has a pending or in-review ticket")
+
         ticket = Ticket(
             product_id=payload.product_id,
             seller_id=payload.seller_id,

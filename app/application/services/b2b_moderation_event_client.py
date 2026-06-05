@@ -56,6 +56,16 @@ class B2BModerationEventClient:
         field_reports: list[Any] | None,
         occurred_at: datetime,
     ):
+        if field_reports:
+            skus = await self.get_product_skus(product_id)
+            print(skus)
+            if skus is None:
+                raise HTTPException(status_code=400, detail="no skus")
+            sku_ids = {str(sku["id"]) for sku in skus}
+            for report in field_reports:
+                if report.sku_id and str(report.sku_id) not in sku_ids:
+                    raise HTTPException(400, f"SKU {report.sku_id} not found in product")
+
         await self._post(
             {
                 "idempotency_key": str(idempotency_key),
@@ -65,7 +75,7 @@ class B2BModerationEventClient:
                 "moderator_comment": moderator_comment,
                 "blocking_reason_id": str(blocking_reason_id),
                 "hard_block": hard_block,
-                "field_reports": self._field_reports_payload(field_reports),
+                "field_reports": self._field_reports_payload(field_reports, product_id),
                 "occurred_at": occurred_at.isoformat(),
             }
         )
@@ -132,22 +142,17 @@ class B2BModerationEventClient:
                     detail=f"B2B moderation events endpoint returned {response.status}",
                 )
 
-    @staticmethod
-    def _field_reports_payload(field_reports: list[Any] | None):
+    def _field_reports_payload(self, field_reports: list[Any] | None, product_id: UUID):
         if not field_reports:
             return None
 
         payload = []
         for report in field_reports:
-            severity = report.severity
-            if isinstance(severity, FieldSeverity):
-                severity = severity.value
-
             payload.append(
                 {
-                    "field_path": report.field_path,
-                    "message": report.message,
-                    "severity": severity,
+                    "field_name": report.field_name,
+                    "sku_id": str(report.sku_id),
+                    "comment": report.comment,
                 }
             )
         return payload

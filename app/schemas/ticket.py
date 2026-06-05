@@ -14,9 +14,9 @@ from .blocking_reason import BlockingReasonResponse
 
 
 class FieldReport(BaseModel):
-    field_path: str = Field(example="images[0].url")
-    message: str = Field(max_length=1000)
-    severity: FieldSeverity = Field(default=FieldSeverity.ERROR)
+    field_name: str = Field(example="images[0].url")
+    comment: str = Field(max_length=1000)
+    sku_id: UUID | None = None
 
 
 class FieldReportResponse(FieldReport):

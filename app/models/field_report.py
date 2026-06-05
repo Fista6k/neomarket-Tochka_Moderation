@@ -22,8 +22,13 @@ class FieldReport(Base):
         ForeignKey("tickets.id", ondelete="CASCADE"),
     )
 
-    field_path: Mapped[str] = mapped_column(String(255))
-    message: Mapped[str] = mapped_column(String(1000))
+    sku_id: Mapped[uuid.UUID | None] = mapped_column(
+            UUID(as_uuid=True),
+            nullable=True
+        )
+
+    field_name: Mapped[str] = mapped_column(String(255))
+    comment: Mapped[str] = mapped_column(String(1000))
     severity: Mapped[FieldSeverity] = mapped_column(
         Enum(FieldSeverity),
         default=FieldSeverity.ERROR,

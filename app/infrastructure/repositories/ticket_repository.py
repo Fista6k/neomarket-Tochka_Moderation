@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, func, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -38,10 +38,10 @@ class TicketRepository:
             update(Ticket)
             .where(
                 Ticket.product_id == product_id,
-                Ticket.status.in_([TicketStatus.PENDING, TicketStatus.IN_REVIEW]),
+                Ticket.status.in_([TicketStatus.PENDING, TicketStatus.IN_REVIEW, TicketStatus.HARD_BLOCKED, TicketStatus.BLOCKED]),
             )
             .values(
-                status=TicketStatus.BLOCKED,
+                status=TicketStatus.DELETED,
                 assigned_moderator_id=None,
                 claimed_at=None,
                 is_deleted=True,
@@ -60,12 +60,23 @@ class TicketRepository:
         result = await self.db.execute(
             select(Ticket)
             .where(Ticket.product_id == product_id)
+            .order_by(Ticket.created_at)
+            .limit(1)
             .options(
                 selectinload(Ticket.field_reports),
                 selectinload(Ticket.history),
                 selectinload(Ticket.moderator),
                 selectinload(Ticket.blocking_reasons),
             )
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_active_ticket_by_product(self, product_id: UUID) -> Ticket | None:
+        result = await self.db.execute(
+            select(Ticket)
+            .where(Ticket.product_id == product_id)
+            .where(Ticket.status.in_([TicketStatus.PENDING, TicketStatus.IN_REVIEW]))
+            .limit(1)
         )
         return result.scalar_one_or_none()
 

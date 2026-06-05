@@ -17,6 +17,7 @@ class TicketStatus(str, enum.Enum):
     APPROVED = "APPROVED"
     BLOCKED = "BLOCKED"
     HARD_BLOCKED = "HARD_BLOCKED"
+    DELETED = "DELETED"
 
 
 class FieldSeverity(str, enum.Enum):
